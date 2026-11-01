@@ -17,7 +17,7 @@ MODE             ?= split
 PCT              ?= 10
 
 .PHONY: help tools up cluster repos gateway-api istio monitoring tempo kiali argo k6-operator \
-        generate preload deploy canary-release exp-mode load load-logs ui verify status down
+        generate preload deploy canary-release exp-mode load load-logs stop-load ui verify status pause resume down
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -66,7 +66,9 @@ argo:
 	helm upgrade --install argo-rollouts argo/argo-rollouts -n argo-rollouts --create-namespace -f values/argo-rollouts.yaml --wait
 
 k6-operator:
-	helm upgrade --install k6-operator grafana/k6-operator -n k6-operator-system --create-namespace --wait
+	# the chart creates its own namespace: tell it not to, or fall back to installing from `default`
+	helm upgrade --install k6-operator grafana/k6-operator -n k6-operator-system --create-namespace --set namespace.create=false --wait \
+		|| { kubectl delete ns k6-operator-system --ignore-not-found; helm upgrade --install k6-operator grafana/k6-operator -n default --wait; }
 
 # ---------------------------------------------------------------- the mesh
 generate: ## Generate the service graph (N=50 SEED=42)
@@ -122,6 +124,15 @@ verify: ## Smoke test: pods, waypoint, one request through the graph, metrics
 
 status: ## Pods that are not Running/Completed
 	@kubectl get pods -A --no-headers | grep -vE 'Running|Completed' || echo "all pods healthy"
+
+stop-load: ## Stop all k6 traffic
+	kubectl -n load delete testrun --all --ignore-not-found
+
+pause: stop-load ## Stop the kind nodes: keeps the cluster, frees CPU and RAM
+	docker stop $(CLUSTER)-control-plane $(CLUSTER)-worker $(CLUSTER)-worker2
+
+resume: ## Start the paused kind nodes (wait ~1 min, then make status)
+	docker start $(CLUSTER)-control-plane $(CLUSTER)-worker $(CLUSTER)-worker2
 
 down: ## Delete the cluster
 	kind delete cluster --name $(CLUSTER)

@@ -1,5 +1,8 @@
 # Used by every Rollout (canary.analysis). Aborts the rollout when the canary's
-# success ratio, measured at the waypoint, drops below 95%.
+# success ratio, measured at the waypoint, drops below 95% -- or when there is
+# no data at all: no traffic means nothing was verified, so it must not pass.
+# (An earlier version accepted NaN/empty results and promoted a bad release
+# while the load test was not running. See docs/LAB-REPORT.md.)
 apiVersion: argoproj.io/v1alpha1
 kind: AnalysisTemplate
 metadata:
@@ -11,8 +14,9 @@ spec:
   metrics:
     - name: success-rate
       interval: 15s
-      failureLimit: 2
-      successCondition: 'len(result) == 0 || isNaN(result[0]) || result[0] >= 0.95'
+      initialDelay: 30s
+      failureLimit: 3
+      successCondition: 'len(result) > 0 && !isNaN(result[0]) && result[0] >= 0.95'
       provider:
         prometheus:
           address: {{ .Values.prometheusAddress }}

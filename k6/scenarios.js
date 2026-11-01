@@ -14,7 +14,7 @@ const shapes = {
     executor: 'constant-arrival-rate',
     rate: RATE,
     timeUnit: '1s',
-    duration: '10m',
+    duration: '30m',
     preAllocatedVUs: 20,
     maxVUs: 200,
   },

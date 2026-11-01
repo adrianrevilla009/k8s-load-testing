@@ -1,0 +1,9 @@
+controller:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 192Mi
+dashboard:
+  enabled: true

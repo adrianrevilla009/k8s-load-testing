@@ -1,0 +1,22 @@
+# Single-binary Tempo (grafana-community/tempo). fake-service speaks Zipkin,
+# so the zipkin receiver on 9411 is the one that matters.
+# VERIFY after install:  kubectl -n monitoring get svc tempo   (expect 9411 and 3200)
+tempo:
+  retention: 2h
+  receivers:
+    zipkin:
+      endpoint: 0.0.0.0:9411
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+persistence:
+  enabled: false
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi

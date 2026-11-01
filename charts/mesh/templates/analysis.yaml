@@ -1,0 +1,22 @@
+# Used by every Rollout (canary.analysis). Aborts the rollout when the canary's
+# success ratio, measured at the waypoint, drops below 95%.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: success-rate
+  namespace: {{ .Values.namespace }}
+spec:
+  args:
+    - name: service
+  metrics:
+    - name: success-rate
+      interval: 15s
+      failureLimit: 2
+      successCondition: 'len(result) == 0 || isNaN(result[0]) || result[0] >= 0.95'
+      provider:
+        prometheus:
+          address: {{ .Values.prometheusAddress }}
+          query: |
+            sum(irate(istio_requests_total{reporter="waypoint",destination_service_name="{{`{{args.service}}`}}",response_code!~"5.*"}[1m]))
+            /
+            sum(irate(istio_requests_total{reporter="waypoint",destination_service_name="{{`{{args.service}}`}}"}[1m]))

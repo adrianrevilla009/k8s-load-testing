@@ -1,0 +1,20 @@
+# 1 control-plane + 2 workers. maxPods raised so 100-150 services + infra fit.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: mesh-lab
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: KubeletConfiguration
+        maxPods: 200
+  - role: worker
+    kubeadmConfigPatches:
+      - |
+        kind: KubeletConfiguration
+        maxPods: 200
+  - role: worker
+    kubeadmConfigPatches:
+      - |
+        kind: KubeletConfiguration
+        maxPods: 200

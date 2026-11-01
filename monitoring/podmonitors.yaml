@@ -1,0 +1,37 @@
+# Scrape the waypoint (Envoy) in the mesh namespace. It is the component that
+# emits L7 metrics (istio_requests_total, istio_request_duration_milliseconds)
+# in ambient mode, labelled reporter="waypoint". Relabeling follows Istio's
+# documented PodMonitor: it targets the prometheus.io/port annotation.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: istio-waypoint
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - mesh
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: waypoint
+  jobLabel: istio-waypoint
+  podMetricsEndpoints:
+    - path: /stats/prometheus
+      interval: 15s
+      relabelings:
+        - action: keep
+          sourceLabels: [__meta_kubernetes_pod_container_name]
+          regex: istio-proxy
+        - action: keep
+          sourceLabels: [__meta_kubernetes_pod_annotationpresent_prometheus_io_scrape]
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_ip, __meta_kubernetes_pod_annotation_prometheus_io_port]
+          regex: (.+);(.+)
+          replacement: $1:$2
+          targetLabel: __address__
+        - action: replace
+          sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod

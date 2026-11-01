@@ -1,0 +1,39 @@
+namespace: mesh
+image: nicholasjackson/fake-service:v0.26.2
+
+# Where fake-service sends spans (Zipkin protocol; Tempo receives it on 9411)
+tracing: true
+zipkin: http://tempo.monitoring.svc.cluster.local:9411
+
+# Used by the Argo Rollouts AnalysisTemplate
+prometheusAddress: http://kps-prometheus.monitoring.svc.cluster.local:9090
+
+# One waypoint proxy for the whole namespace (needed for L7 routing in ambient mode)
+waypoint: true
+
+# Applied to every service, then the entry from services[], then overrides[<name>]
+defaults:
+  replicas: 1
+  errorRate: 0
+  p50: 5
+  p90: 15
+  p99: 30
+  # only for kind=variants
+  mode: ab          # ab | mirror | split | off
+  splitPercent: 10  # % of traffic to v2 when mode=split
+  v2ErrorRate: 0
+  v2LatencyMs: 0
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 24Mi
+  limits:
+    memory: 64Mi
+
+# generated/topology.yaml fills this list
+services: []
+
+# Per-service tweaks without regenerating, e.g.
+#   --set overrides.biz-010.mode=split --set overrides.biz-010.splitPercent=20
+overrides: {}

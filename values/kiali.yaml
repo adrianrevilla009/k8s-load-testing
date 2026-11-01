@@ -1,0 +1,20 @@
+auth:
+  strategy: anonymous
+istio_namespace: istio-system
+external_services:
+  prometheus:
+    url: http://kps-prometheus.monitoring.svc.cluster.local:9090
+  grafana:
+    enabled: false
+  tracing:
+    enabled: true
+    provider: tempo
+    internal_url: http://tempo.monitoring.svc.cluster.local:3200
+    use_grpc: false
+deployment:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 256Mi

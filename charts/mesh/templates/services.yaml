@@ -1,0 +1,234 @@
+{{- $ns := .Values.namespace }}
+{{- range $svc := .Values.services }}
+{{- $s := include "mesh.resolve" (dict "root" $ "svc" $svc) | fromYaml }}
+{{- $uris := list }}
+{{- range $u := ($s.upstreams | default (list)) }}
+{{- $uris = append $uris (printf "http://%s:9090" $u) }}
+{{- end }}
+{{- $kind := $s.kind | default "plain" }}
+{{- $b := dict "image" $.Values.image "resources" $.Values.resources "tracing" $.Values.tracing "zipkin" $.Values.zipkin "name" $s.name "uris" (join "," $uris) "version" "v1" "errorRate" $s.errorRate "p50" $s.p50 "p90" $s.p90 "p99" $s.p99 }}
+
+{{- if eq $kind "plain" }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $s.name }}
+  namespace: {{ $ns }}
+  labels:
+    app: {{ $s.name }}
+spec:
+  replicas: {{ $s.replicas }}
+  selector:
+    matchLabels:
+      app: {{ $s.name }}
+  template:
+    {{- include "mesh.podTemplate" $b | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $s.name }}
+  namespace: {{ $ns }}
+  labels:
+    app: {{ $s.name }}
+spec:
+  selector:
+    app: {{ $s.name }}
+  ports:
+    - name: http
+      port: 9090
+      targetPort: http
+      appProtocol: http
+
+{{- else if eq $kind "canary" }}
+{{- $_ := set $b "version" ($s.version | default "v1") }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ $s.name }}
+  namespace: {{ $ns }}
+  labels:
+    app: {{ $s.name }}
+spec:
+  replicas: {{ $s.replicas }}
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app: {{ $s.name }}
+  template:
+    {{- include "mesh.podTemplate" $b | nindent 4 }}
+  strategy:
+    canary:
+      stableService: {{ $s.name }}-stable
+      canaryService: {{ $s.name }}-canary
+      trafficRouting:
+        istio:
+          virtualService:
+            name: {{ $s.name }}
+            routes:
+              - primary
+      analysis:
+        templates:
+          - templateName: success-rate
+        startingStep: 1
+        args:
+          - name: service
+            value: {{ $s.name }}-canary
+      steps:
+        - setWeight: 10
+        - pause: {duration: 45s}
+        - setWeight: 30
+        - pause: {duration: 45s}
+        - setWeight: 60
+        - pause: {duration: 45s}
+{{- range $suffix := (list "" "-stable" "-canary") }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $s.name }}{{ $suffix }}
+  namespace: {{ $ns }}
+  labels:
+    app: {{ $s.name }}
+spec:
+  selector:
+    app: {{ $s.name }}
+  ports:
+    - name: http
+      port: 9090
+      targetPort: http
+      appProtocol: http
+{{- end }}
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ $s.name }}
+  namespace: {{ $ns }}
+spec:
+  hosts:
+    - {{ $s.name }}
+  http:
+    - name: primary
+      route:
+        - destination:
+            host: {{ $s.name }}-stable
+          weight: 100
+        - destination:
+            host: {{ $s.name }}-canary
+          weight: 0
+
+{{- else if eq $kind "variants" }}
+{{- $mode := $s.mode | default "ab" }}
+{{- range $v := (list "v1" "v2") }}
+{{- $_ := set $b "version" $v }}
+{{- if eq $v "v2" }}
+{{- $_ := set $b "errorRate" $s.v2ErrorRate }}
+{{- $_ := set $b "p50" (add $s.p50 $s.v2LatencyMs) }}
+{{- $_ := set $b "p90" (add $s.p90 $s.v2LatencyMs) }}
+{{- $_ := set $b "p99" (add $s.p99 $s.v2LatencyMs) }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $s.name }}-{{ $v }}
+  namespace: {{ $ns }}
+  labels:
+    app: {{ $s.name }}
+    version: {{ $v }}
+spec:
+  replicas: {{ $s.replicas }}
+  selector:
+    matchLabels:
+      app: {{ $s.name }}
+      version: {{ $v }}
+  template:
+    {{- include "mesh.podTemplate" $b | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $s.name }}-{{ $v }}
+  namespace: {{ $ns }}
+  labels:
+    app: {{ $s.name }}
+spec:
+  selector:
+    app: {{ $s.name }}
+    version: {{ $v }}
+  ports:
+    - name: http
+      port: 9090
+      targetPort: http
+      appProtocol: http
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $s.name }}
+  namespace: {{ $ns }}
+  labels:
+    app: {{ $s.name }}
+spec:
+  selector:
+    app: {{ $s.name }}
+  ports:
+    - name: http
+      port: 9090
+      targetPort: http
+      appProtocol: http
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ $s.name }}
+  namespace: {{ $ns }}
+  annotations:
+    mesh-lab/mode: {{ $mode | quote }}
+spec:
+  hosts:
+    - {{ $s.name }}
+  http:
+    {{- if eq $mode "ab" }}
+    - name: beta
+      match:
+        - headers:
+            x-user-group:
+              exact: beta
+      route:
+        - destination:
+            host: {{ $s.name }}-v2
+    - name: default
+      route:
+        - destination:
+            host: {{ $s.name }}-v1
+    {{- else if eq $mode "mirror" }}
+    - name: primary
+      route:
+        - destination:
+            host: {{ $s.name }}-v1
+      mirror:
+        host: {{ $s.name }}-v2
+      mirrorPercentage:
+        value: 100
+    {{- else if eq $mode "split" }}
+    - name: primary
+      route:
+        - destination:
+            host: {{ $s.name }}-v1
+          weight: {{ sub 100 (int $s.splitPercent) }}
+        - destination:
+            host: {{ $s.name }}-v2
+          weight: {{ int $s.splitPercent }}
+    {{- else }}
+    - name: primary
+      route:
+        - destination:
+            host: {{ $s.name }}-v1
+    {{- end }}
+{{- end }}
+{{- end }}

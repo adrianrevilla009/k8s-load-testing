@@ -1,0 +1,68 @@
+# kube-prometheus-stack trimmed for a ~9 GB machine.
+# Release name must be "kps" -> services: kps-prometheus, kps-grafana
+fullnameOverride: kps
+
+alertmanager:
+  enabled: false
+nodeExporter:
+  enabled: false
+kubeStateMetrics:
+  enabled: false
+defaultRules:
+  create: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
+coreDns:
+  enabled: false
+
+prometheusOperator:
+  admissionWebhooks:
+    enabled: false
+  tls:
+    enabled: false
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 192Mi
+
+prometheus:
+  prometheusSpec:
+    retention: 6h
+    scrapeInterval: 15s
+    enableRemoteWriteReceiver: true   # k6 pushes its metrics here
+    podMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 200m
+        memory: 400Mi
+      limits:
+        memory: 1500Mi
+
+grafana:
+  adminPassword: admin
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 400Mi
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      searchNamespace: ALL
+  additionalDataSources:
+    - name: Tempo
+      type: tempo
+      uid: tempo
+      access: proxy
+      url: http://tempo.monitoring.svc.cluster.local:3200
